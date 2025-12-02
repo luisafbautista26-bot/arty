@@ -153,70 +153,81 @@ class ArtIdentifier:
         """Busca en The Metropolitan Museum API."""
         try:
             # Búsqueda
-            search_url = f"https://collectionapi.metmuseum.org/public/collection/v1/search?q={query}"
-            search_response = requests.get(search_url, timeout=5)
+            search_url = f"https://collectionapi.metmuseum.org/public/collection/v1/search?q={query}&hasImages=true"
+            search_response = requests.get(search_url, timeout=10)
             
             if search_response.status_code != 200:
-                return None
+                return []
             
             data = search_response.json()
             if not data.get('objectIDs'):
-                return None
+                return []
             
-            # Obtener detalles del primer resultado
-            object_id = data['objectIDs'][0]
-            object_url = f"https://collectionapi.metmuseum.org/public/collection/v1/objects/{object_id}"
-            object_response = requests.get(object_url, timeout=5)
+            # Obtener detalles de múltiples resultados (hasta 10)
+            resultados = []
+            for object_id in data['objectIDs'][:10]:
+                try:
+                    object_url = f"https://collectionapi.metmuseum.org/public/collection/v1/objects/{object_id}"
+                    object_response = requests.get(object_url, timeout=5)
+                    
+                    if object_response.status_code == 200:
+                        artwork = object_response.json()
+                        # Solo agregar si tiene imagen
+                        if artwork.get('primaryImage'):
+                            resultados.append({
+                                'titulo': artwork.get('title', 'Desconocido'),
+                                'artista': artwork.get('artistDisplayName', 'Desconocido'),
+                                'año': artwork.get('objectDate', 'Desconocido'),
+                                'cultura': artwork.get('culture', 'N/A'),
+                                'medio': artwork.get('medium', 'N/A'),
+                                'dimensiones': artwork.get('dimensions', 'N/A'),
+                                'departamento': artwork.get('department', 'N/A'),
+                                'imagen': artwork.get('primaryImage', ''),
+                                'url_museo': artwork.get('objectURL', ''),
+                                'fuente': 'Metropolitan Museum'
+                            })
+                except:
+                    continue
             
-            if object_response.status_code == 200:
-                artwork = object_response.json()
-                return {
-                    'titulo': artwork.get('title', 'Desconocido'),
-                    'artista': artwork.get('artistDisplayName', 'Desconocido'),
-                    'año': artwork.get('objectDate', 'Desconocido'),
-                    'cultura': artwork.get('culture', 'N/A'),
-                    'medio': artwork.get('medium', 'N/A'),
-                    'dimensiones': artwork.get('dimensions', 'N/A'),
-                    'departamento': artwork.get('department', 'N/A'),
-                    'imagen': artwork.get('primaryImage', ''),
-                    'fuente': 'Metropolitan Museum'
-                }
+            return resultados
         except Exception as e:
-            st.error(f"Error en Met Museum: {str(e)}")
-            return None
+            return []
     
     @staticmethod
     def buscar_en_rijksmuseum(query):
         """Busca en Rijksmuseum API."""
         try:
-            url = f"https://www.rijksmuseum.nl/api/en/collection?key=0fiuZFh4&q={query}&ps=1"
-            response = requests.get(url, timeout=5)
+            url = f"https://www.rijksmuseum.nl/api/en/collection?key=0fiuZFh4&q={query}&ps=10&imgonly=True"
+            response = requests.get(url, timeout=10)
             
             if response.status_code == 200:
                 data = response.json()
+                resultados = []
                 if data.get('artObjects'):
-                    art = data['artObjects'][0]
-                    return {
-                        'titulo': art.get('title', 'Desconocido'),
-                        'artista': art.get('principalOrFirstMaker', 'Desconocido'),
-                        'año': art.get('dating', {}).get('presentingDate', 'Desconocido'),
-                        'imagen': art.get('webImage', {}).get('url', ''),
-                        'fuente': 'Rijksmuseum'
-                    }
+                    for art in data['artObjects']:
+                        if art.get('webImage'):
+                            resultados.append({
+                                'titulo': art.get('title', 'Desconocido'),
+                                'artista': art.get('principalOrFirstMaker', 'Desconocido'),
+                                'año': art.get('dating', {}).get('presentingDate', 'Desconocido'),
+                                'imagen': art.get('webImage', {}).get('url', ''),
+                                'url_museo': art.get('links', {}).get('web', ''),
+                                'fuente': 'Rijksmuseum'
+                            })
+                return resultados
         except Exception as e:
-            st.error(f"Error en Rijksmuseum: {str(e)}")
-            return None
+            return []
     
     @staticmethod
     def buscar_en_harvard(query):
         """Busca en Harvard Art Museums API."""
         api_key = os.getenv('HARVARD_API_KEY')
-        if not api_key or api_key == 'your_harvard_key_here':
+        if not api_key or api_key == 'your_harvard_key_here' or not api_key.strip():
             return None
         
         try:
-            url = f"https://api.harvardartmuseums.org/object?apikey={api_key}&q={query}&size=1"
-            response = requests.get(url, timeout=5)
+            url = f"https://api.harvardartmuseums.org/object?apikey={api_key}&q={query}&size=5&hasimage=1"
+            response = requests.get(url, timeout=10)
             
             if response.status_code == 200:
                 data = response.json()
@@ -228,10 +239,10 @@ class ArtIdentifier:
                         'año': art.get('dated', 'Desconocido'),
                         'cultura': art.get('culture', 'N/A'),
                         'imagen': art.get('primaryimageurl', ''),
+                        'url_museo': art.get('url', ''),
                         'fuente': 'Harvard Art Museums'
                     }
         except Exception as e:
-            st.error(f"Error en Harvard: {str(e)}")
             return None
     
     @staticmethod
@@ -239,14 +250,14 @@ class ArtIdentifier:
         """Busca en múltiples APIs y combina resultados."""
         resultados = []
         
-        # Buscar en todas las APIs
-        met_result = ArtIdentifier.buscar_en_met_museum(query)
-        if met_result:
-            resultados.append(met_result)
+        # Buscar en todas las APIs (ahora retornan listas)
+        met_results = ArtIdentifier.buscar_en_met_museum(query)
+        if met_results:
+            resultados.extend(met_results)
         
-        rijks_result = ArtIdentifier.buscar_en_rijksmuseum(query)
-        if rijks_result:
-            resultados.append(rijks_result)
+        rijks_results = ArtIdentifier.buscar_en_rijksmuseum(query)
+        if rijks_results:
+            resultados.extend(rijks_results)
         
         harvard_result = ArtIdentifier.buscar_en_harvard(query)
         if harvard_result:
@@ -538,7 +549,8 @@ def main():
                                 
                                 with col1:
                                     if resultado.get('imagen'):
-                                        st.image(resultado['imagen'], use_container_width=True)
+                                        # Usar markdown para mostrar imagen desde URL
+                                        st.markdown(f"[![{resultado['titulo']}]({resultado['imagen']})]({resultado.get('url_museo', resultado['imagen'])})", unsafe_allow_html=True)
                                     else:
                                         st.info("Sin imagen disponible")
                                 
@@ -547,14 +559,17 @@ def main():
                                     st.markdown(f"**👤 Artista:** {resultado['artista']}")
                                     st.markdown(f"**📅 Año:** {resultado['año']}")
                                     
-                                    if resultado.get('cultura'):
+                                    if resultado.get('cultura') and resultado.get('cultura') != 'N/A':
                                         st.markdown(f"**🌍 Cultura:** {resultado['cultura']}")
-                                    if resultado.get('medio'):
+                                    if resultado.get('medio') and resultado.get('medio') != 'N/A':
                                         st.markdown(f"**🖌️ Medio:** {resultado['medio']}")
-                                    if resultado.get('dimensiones'):
+                                    if resultado.get('dimensiones') and resultado.get('dimensiones') != 'N/A':
                                         st.markdown(f"**📏 Dimensiones:** {resultado['dimensiones']}")
-                                    if resultado.get('departamento'):
+                                    if resultado.get('departamento') and resultado.get('departamento') != 'N/A':
                                         st.markdown(f"**🏛️ Departamento:** {resultado['departamento']}")
+                                    
+                                    if resultado.get('url_museo'):
+                                        st.markdown(f"[🔗 Ver en museo]({resultado['url_museo']})")
                                     
                                     st.caption(f"Fuente: {resultado['fuente']}")
                     else:
@@ -586,7 +601,7 @@ def main():
                                 
                                 with col1:
                                     if pelicula['poster']:
-                                        st.image(pelicula['poster'], use_container_width=True)
+                                        st.image(pelicula['poster'], width=300)
                                 
                                 with col2:
                                     st.markdown(f"**Año:** {pelicula['año']}")
@@ -616,7 +631,7 @@ def main():
                                     
                                     with col1:
                                         if pelicula['poster']:
-                                            st.image(pelicula['poster'], use_container_width=True)
+                                            st.image(pelicula['poster'], width=300)
                                     
                                     with col2:
                                         st.markdown(f"**Año:** {pelicula['año']}")
@@ -653,7 +668,7 @@ def main():
                             
                             with col1:
                                 if info_tmdb.get('imagen'):
-                                    st.image(info_tmdb['imagen'], use_container_width=True)
+                                    st.image(info_tmdb['imagen'], width=300)
                             
                             with col2:
                                 st.markdown(f"### {info_tmdb['nombre']}")
