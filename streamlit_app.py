@@ -9,13 +9,31 @@ import google.generativeai as genai
 # Cargar variables de entorno
 load_dotenv()
 
-# Configurar Gemini AI
+# Configurar Gemini AI: elección dinámica de modelo disponible
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
-    model = genai.GenerativeModel('gemini-1.5-flash')
-else:
-    model = None
+
+def _init_gemini_model():
+    if not GEMINI_API_KEY:
+        return None
+    try:
+        genai.configure(api_key=GEMINI_API_KEY)
+        modelos = []
+        try:
+            modelos = [m for m in genai.list_models() if 'generateContent' in getattr(m, 'supported_generation_methods', [])]
+        except Exception as e:
+            st.warning(f"No se pudieron listar modelos de Gemini: {e}")
+            modelos = []
+
+        if modelos:
+            elegido = modelos[0]
+            return genai.GenerativeModel(elegido.name)
+        else:
+            st.warning("No hay modelos Gemini disponibles para generateContent en tu cuenta/API key.")
+    except Exception as e:
+        st.warning(f"Error configurando Gemini: {e}")
+    return None
+
+model = _init_gemini_model()
 
 # Configuración de la página
 st.set_page_config(
@@ -120,6 +138,8 @@ Tu trabajo:
 NO escribas el poema completo. Ayuda al usuario a que lo escriba él mismo."""
 
         try:
+            if model is None:
+                return "❌ Gemini no está disponible. Verifica tu `GEMINI_API_KEY` y que tu cuenta tenga acceso a modelos (p.ej. gemini-1.5-flash)."
             response = model.generate_content(prompt)
             return response.text
         except Exception as e:
