@@ -19,13 +19,20 @@ def _init_gemini_model():
         genai.configure(api_key=GEMINI_API_KEY)
         modelos = []
         try:
-            modelos = [m for m in genai.list_models() if 'generateContent' in getattr(m, 'supported_generation_methods', [])]
+            # Filtrar modelos disponibles, excluyendo experimentales
+            todos = [m for m in genai.list_models() if 'generateContent' in getattr(m, 'supported_generation_methods', [])]
+            # Excluir modelos experimentales (-exp) que tienen límites muy bajos
+            modelos = [m for m in todos if '-exp' not in m.name.lower()]
+            # Si no hay modelos estables, usar los experimentales como fallback
+            if not modelos:
+                modelos = todos
         except Exception as e:
             st.warning(f"No se pudieron listar modelos de Gemini: {e}")
             modelos = []
 
         if modelos:
-            elegido = modelos[0]
+            # Priorizar modelos flash (más rápidos y mejor cuota gratuita)
+            elegido = next((m for m in modelos if 'flash' in m.name.lower()), modelos[0])
             return genai.GenerativeModel(elegido.name)
         else:
             st.warning("No hay modelos Gemini disponibles para generateContent en tu cuenta/API key.")
